@@ -50,7 +50,7 @@ module Pod
             if existing && existing != file_ref
               if existing.real_path.to_path.start_with?(pod_bundle.sandbox.root.to_path << '/')
                 config.base_configuration_reference = file_ref
-              elsif !xcconfig_includes_target_xcconfig?(config.base_configuration_reference, path)
+              elsif !xcconfig_includes_target_xcconfig?(existing, path)
                 unless existing_config_is_identical_to_pod_config?(existing.real_path, pod_bundle.xcconfig_path(config.name))
                   UI.warn 'CocoaPods did not set the base configuration of your ' \
                   'project because your project already has a custom ' \
@@ -60,8 +60,27 @@ module Pod
                   "build configuration (#{UI.path(existing.real_path)})."
                 end
               end
-            elsif config.base_configuration_reference.nil? || file_ref.nil?
-              config.base_configuration_reference = file_ref
+            else
+              raw = config.to_hash
+              anchor = raw['baseConfigurationReferenceAnchor']&.strip
+              rel = raw['baseConfigurationReferenceRelativePath']&.strip
+
+              if anchor.to_s != '' && rel.to_s != ''
+                anchor_obj = config.project.objects_by_uuid[anchor]
+                desc = if anchor_obj&.respond_to?(:display_name) && anchor_obj.display_name
+                        anchor_obj.display_name
+                      elsif anchor_obj&.respond_to?(:path) && anchor_obj.path
+                        anchor_obj.path
+                      else
+                        anchor
+                      end
+                UI.warn "CocoaPods detected that the `#{config.name}` configuration for the `#{target.name}` target " \
+                        "is using a base configuration file (`#{rel}`) referenced via an anchor (#{desc}).\n" \
+                        "Please manually include the CocoaPods generated xcconfig file (`#{path}`) inside your `#{rel}`."
+                return
+              else
+                config.base_configuration_reference = file_ref
+              end
             end
           end
 
